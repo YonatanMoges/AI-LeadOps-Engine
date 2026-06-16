@@ -1,0 +1,615 @@
+{
+  "name": "Automation #2 Google Maps Business Scraper → Google Sheet → Optional Email/WhatsApp",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dd9ddc89-49e1-49d8-bfc5-09ac8aa8ae07",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "504a3fa7-6cfc-4573-af39-15912e557d2a",
+              "name": "query",
+              "value": "dental clinic",
+              "type": "string"
+            },
+            {
+              "id": "18693ffa-d263-43a7-b339-e89363664500",
+              "name": "location",
+              "value": "Sharjah, UAE",
+              "type": "string"
+            },
+            {
+              "id": "cd0329bd-1515-4b17-987f-72ab6eb8a4fc",
+              "name": "radius_m",
+              "value": 2000,
+              "type": "number"
+            },
+            {
+              "id": "04760680-acb8-4778-83ab-f6b48a275c84",
+              "name": "max_pages",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "99842abc-26bb-4edc-97d4-89609198e11b",
+              "name": "api_key",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "deb29682-6aec-4985-815c-f67b12a68c2f",
+      "name": "Inputs"
+    },
+    {
+      "parameters": {
+        "url": "https://maps.googleapis.com/maps/api/geocode/json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "address",
+              "value": "={{$json.location}}"
+            },
+            {
+              "name": "key",
+              "value": "={{$json.api_key}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "9f9e3cd5-d824-4504-9904-9f95a40aa927",
+      "name": "Geocode"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = items[0].json;\nif (!res.results || res.results.length === 0) {\n  throw new Error(\"Geocode returned no results. Check location string.\");\n}\nconst loc = res.results[0].geometry.location;\nreturn [{ json: { ...items[0].json, lat: loc.lat, lng: loc.lng } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "a2d9dbae-a91d-4347-a6f9-a859a1a02dfa",
+      "name": "Extract LatLng"
+    },
+    {
+      "parameters": {
+        "url": "https://maps.googleapis.com/maps/api/place/textsearch/json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$node[\"Inputs\"].json.query}}\n"
+            },
+            {
+              "name": "location",
+              "value": "={{$json.lat}},{{$json.lng}}"
+            },
+            {
+              "name": "radius",
+              "value": "={{$node[\"Inputs\"].json.radius_m}}\n"
+            },
+            {
+              "name": "key",
+              "value": "={{$node[\"Inputs\"].json.api_key}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        832,
+        0
+      ],
+      "id": "75ce110a-f89e-4bbf-8858-cee6c86d3b80",
+      "name": "Places Search"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = items[0].json;\nconst places = res.results || [];\nconst next = res.next_page_token || null;\n\nreturn places.map(p => ({\n  json: {\n    place_id: p.place_id,\n    name: p.name,\n    address: p.formatted_address,\n    rating: p.rating ?? null,\n    user_ratings_total: p.user_ratings_total ?? null,\n    types: p.types ?? [],\n    next_page_token: next\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "4c83f703-7870-47d2-9fef-3025535cfd6e",
+      "name": "Extract Places + Token"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item) => {\n  const d = item.json;\n\n  const rawPhone =\n    d.internationalPhoneNumber ||\n    d.nationalPhoneNumber ||\n    null;\n\n  const phone = rawPhone\n    ? rawPhone.replace(/\\s+/g, \"\").replace(/^\\+/, \"\")\n    : null;\n\n  const opening_hours = d.regularOpeningHours?.weekdayDescriptions\n    ? d.regularOpeningHours.weekdayDescriptions.join(\" | \")\n    : null;\n\n  const hasPhone = !!phone;\n  const hasWebsite = !!d.websiteUri;\n  const isOperational = d.businessStatus === \"OPERATIONAL\";\n  const openNow = d.regularOpeningHours?.openNow === true;\n\n  let lead_score = 0;\n\n  if (hasPhone) lead_score += 1;\n  if (hasWebsite) lead_score += 1;\n  if (isOperational) lead_score += 1;\n  if (openNow) lead_score += 1;\n\n  const nameText = (d.displayName?.text || \"\").toLowerCase();\n\n  if (\n    nameText.includes(\"clinic\") ||\n    nameText.includes(\"center\") ||\n    nameText.includes(\"centre\") ||\n    nameText.includes(\"medical\")\n  ) {\n    lead_score += 1;\n  }\n\n  lead_score = Math.min(lead_score, 5);\n\n  return {\n    json: {\n      name: d.displayName?.text || null,\n      phone,\n      address: d.formattedAddress || null,\n      website: d.websiteUri || null,\n      business_status: d.businessStatus || null,\n\n      source: \"Google Maps\",\n\n      niche: \"Dental Clinic\",\n      city: \"Sharjah\",\n      country: \"UAE\",\n\n      lead_score,\n      has_phone: hasPhone,\n      has_website: hasWebsite,\n      is_operational: isOperational,\n\n      last_seen_at: new Date().toISOString(),\n      created_at: new Date().toISOString(),\n\n      open_now: openNow,\n      opening_hours,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        0
+      ],
+      "id": "5d953848-9802-4b24-9206-1923eb2b64d8",
+      "name": "Normalize Leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiKey = $items(\"Inputs\")[0]?.json?.api_key;\nif (!apiKey) throw new Error(\"Inputs.api_key is empty\");\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    api_key: apiKey.trim(),\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "37970f66-b14c-4027-9747-5e9e211e2e45",
+      "name": "Attach API Key"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "={{ $json.phone }}",
+            "name": "={{ $json.name }}",
+            "website": "={{ $json.website }}",
+            "address": "={{ $json.address }}",
+            "business_status": "={{ $json.business_status }}",
+            "source": "={{ $json.source }}",
+            "query": "={{ $json.query }}",
+            "location": "={{ $json.location }}",
+            "created_at": "={{ $json.created_at }}",
+            "has_phone": "={{ $json.has_phone }}",
+            "has_website": "={{ $json.has_website }}",
+            "is_operational": "={{ $json.is_operational }}"
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "business_status",
+              "displayName": "business_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "niche",
+              "displayName": "niche",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "city",
+              "displayName": "city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "country",
+              "displayName": "country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_score",
+              "displayName": "lead_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_seen_at",
+              "displayName": "last_seen_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "open_now",
+              "displayName": "open_now",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "opening_hours",
+              "displayName": "opening_hours",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "contacted_at",
+              "displayName": "contacted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "follow_up_message",
+              "displayName": "follow_up_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "next_action",
+              "displayName": "next_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_stage",
+              "displayName": "lead_stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "follow_up_attempts",
+              "displayName": "follow_up_attempts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "last_contacted_at",
+              "displayName": "last_contacted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "next_follow_up_at",
+              "displayName": "next_follow_up_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "has_phone",
+              "displayName": "has_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "has_website",
+              "displayName": "has_website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "is_operational",
+              "displayName": "is_operational",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "0d70e743-028b-41d9-ba0c-8a1ea25201e5",
+      "name": "Append or update row in sheet"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inputs": {
+      "main": [
+        [
+          {
+            "node": "Geocode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geocode": {
+      "main": [
+        [
+          {
+            "node": "Extract LatLng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract LatLng": {
+      "main": [
+        [
+          {
+            "node": "Places Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Places Search": {
+      "main": [
+        [
+          {
+            "node": "Extract Places + Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Places + Token": {
+      "main": [
+        [
+          {
+            "node": "Attach API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Leads": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+
+    "Attach API Key": {
+      "main": [
+        [
+          {
+            "node": "Place Details (New)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place Details (New)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "8c3958ae-18e7-40f3-992d-b758d8b4f2ba",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "id": "aDI06zWGzqOXCSn2",
+  "tags": []
+}

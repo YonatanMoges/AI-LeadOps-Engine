@@ -1,0 +1,10 @@
+.env
+credentials/
+*.key
+*.pem
+*.secret
+node_modules/
+.DS_Store
+
+demos/0605.mov
+demos/0612.mov

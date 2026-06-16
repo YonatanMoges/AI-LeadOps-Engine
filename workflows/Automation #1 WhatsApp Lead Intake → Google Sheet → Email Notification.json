@@ -1,0 +1,255 @@
+{
+  "name": "Automation #1 WhatsApp Lead Intake → Google Sheet → Email Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        -48
+      ],
+      "id": "8e7a2673-088e-41a2-8b6c-ba79a8a2b028",
+      "name": "Lead Intake",
+      "webhookId": "0dcc4725-fee5-4e39-8ca9-d9f9cf074982"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1accebed-1a33-4852-8568-c678a2788903",
+              "name": "name",
+              "value": "={{$json.body.name}}",
+              "type": "string"
+            },
+            {
+              "id": "e018e264-e5ad-4288-9473-c8b2fd138fda",
+              "name": "phone",
+              "value": "={{$json.body.phone}}",
+              "type": "string"
+            },
+            {
+              "id": "4d39e55e-b838-4168-b110-9f00dd4676ea",
+              "name": "message",
+              "value": "={{$json.body.message}}",
+              "type": "string"
+            },
+            {
+              "id": "4dcba064-5a3f-4c47-802d-45ac782407aa",
+              "name": "date",
+              "value": "={{$now}}",
+              "type": "string"
+            },
+            {
+              "id": "6a1b737f-6033-4e5d-90ab-b8a63457d6d9",
+              "name": "source",
+              "value": "WhatsApp",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        -48
+      ],
+      "id": "8bdc0a2c-5f1e-48c3-949e-20e6b8ad1acf",
+      "name": "Normalize"
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = String($json.message ?? \"\")\n  .toLowerCase()\n  .replace(/\\s+/g, \" \")\n  .trim();\n\nconst pricingRe = /\\b(price|pricing|cost|fee)\\b|\\bhow much\\b/;\nconst bookingRe = /\\b(book|booking|appointment|schedule|available|visit)\\b/;\n\nlet category = \"general\";\nif (pricingRe.test(msg)) category = \"pricing\";\nelse if (bookingRe.test(msg)) category = \"booking\";\n\nreturn {\n  ...$json,\n  category,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -48
+      ],
+      "id": "b604afe6-e08e-4b65-bcbe-ba773a870782",
+      "name": "Classify Lead"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "WhatsApp Lead",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{$json.name}}",
+            "Phone": "={{$json.phone}}",
+            "Message": "={{$json.message}}",
+            "Date": "={{$json.date}}",
+            "Source(Whatsapp)": "={{$json.source}}",
+            "Category": "={{$json.category}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source(Whatsapp)",
+              "displayName": "Source(Whatsapp)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        640,
+        -48
+      ],
+      "id": "a94ed80a-1736-4f8f-945c-3177530f0218",
+      "name": "Append Row"
+    },
+    {
+      "parameters": {
+        "sendTo": "your-email@example.com",
+        "subject": "New WhatsApp Lead",
+        "message": "=Name: {{$node[\"Normalize\"].json[\"name\"]}}\nPhone: {{$node[\"Normalize\"].json[\"phone\"]}}\nMessage: {{$node[\"Normalize\"].json[\"message\"]}}\nDate: {{$node[\"Normalize\"].json[\"date\"]}}\nSource: {{$node[\"Normalize\"].json[\"source\"]}}\nCategory: {{$json.category}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        864,
+        -48
+      ],
+      "id": "18ac9e02-989e-4953-a098-0e924acd829f",
+      "name": "Notify",
+      "webhookId": "23191576-9caf-4db3-bd2d-62b8e49ada1c"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Classify Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Lead": {
+      "main": [
+        [
+          {
+            "node": "Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Row": {
+      "main": [
+        [
+          {
+            "node": "Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "11e6a0ba-a607-4626-91db-f095be2a595c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "id": "DpPwTsCGj4NqYbD3",
+  "tags": []
+}
