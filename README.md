@@ -202,6 +202,11 @@ The CRM stores:
 | Workflow 1 – WhatsApp Lead Intake | [Watch Demo](https://drive.google.com/file/d/13Q6i6xxPEzNSjb0hTPoBAsGJSSaqH3f4/view?usp=sharing) |
 | Workflow 2 & 3 – AI LeadOps Engine | [Watch Demo](https://drive.google.com/file/d/1RSb3kybMOPcgb9Qgt8Ub3fvF4l7JOoCU/view?usp=sharing) |
 
+
+## Case Study
+
+📄 [View Case Study](docs/AI_LeadOps_Engine_Case_Study.pdf)
+
 ## Future Improvements
 
 ### Short-Term
